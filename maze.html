@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Find My Heart - Minecraft Maze Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #333;
+            font-family: 'Arial', sans-serif;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 90vmin;
+            height: 90vmin;
+            background: url('background.jpg') center/cover;
+            border: 4px solid #000;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        #maze {
+            display: grid;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+
+        .cell {
+            position: relative;
+            border: 1px solid #444;
+        }
+
+        .wall {
+            background-color: #654321;
+            border: 2px solid #523612;
+        }
+
+        .path {
+            background-color: transparent;
+        }
+
+        #player {
+            position: absolute;
+            width: 80%;
+            height: 80%;
+            background: url('player.gif') center/contain no-repeat;
+            transition: all 0.2s ease;
+        }
+
+        .heart {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 80%;
+            height: 80%;
+            margin: 10%;
+            background: url('heart.gif') center/contain no-repeat;
+            animation: pulse 1.5s infinite;
+        }
+
+        /* Fireworks */
+        .firework {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            pointer-events: none;
+            animation: explode 1s ease-out forwards;
+        }
+
+        @keyframes explode {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(20);
+                opacity: 0;
+            }
+        }
+
+        #message-overlay, #start-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        #message-overlay {
+            display: none;
+        }
+
+        #message-box {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            max-width: 80%;
+        }
+
+        #mobile-controls {
+            position: fixed;
+            bottom: 20px;
+            display: none;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            background-color: rgba(255, 255, 255, 0.2);
+            border: 2px solid #fff;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+
+        @media (max-width: 768px) {
+            #mobile-controls {
+                display: flex;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="start-screen">
+        <div id="message-box">
+            <h2>Find My Heart</h2>
+            <p>Navigate through the maze to find the heart!</p>
+            <button onclick="startGame()">Start Game</button>
+        </div>
+    </div>
+
+    <div id="game-container">
+        <div id="maze"></div>
+    </div>
+    
+    <div id="mobile-controls">
+        <div class="control-btn" data-direction="up">↑</div>
+        <div class="control-btn" data-direction="left">←</div>
+        <div class="control-btn" data-direction="down">↓</div>
+        <div class="control-btn" data-direction="right">→</div>
+    </div>
+
+    <div id="message-overlay">
+        <div id="message-box">
+            <p id="message-text"></p>
+            <button onclick="resetGame()">Play Again</button>
+        </div>
+    </div>
+
+    <audio id="bgMusic" loop>
+        <source src="maze.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="winSound">
+        <source src="win.mp3" type="audio/mpeg">
+    </audio>
+
+    <script>
+        // Game configuration
+        const config = {
+            mazeSize: 10,
+            playerStartPos: { x: 0, y: 0 },
+            heartPos: { x: 9, y: 9 },
+            messages: {
+                win: "You found my heart... now what are you gonna do with it? 💘"
+            }
+        };
+
+        // Game state
+        let playerPos = { ...config.playerStartPos };
+        let maze = [];
+        let gameActive = true;
+        const bgMusic = document.getElementById('bgMusic');
+        const winSound = document.getElementById('winSound');
+
+        // Initialize game
+        function initGame() {
+            generateMaze();
+            renderMaze();
+            setupEventListeners();
+        }
+
+        // Start game (called from start button)
+        function startGame() {
+            document.getElementById('start-screen').style.display = 'none';
+            bgMusic.play().catch(e => console.log('Audio playback error:', e));
+            // Game will start when user clicks the start button
+        }
+
+        // Generate random maze using DFS algorithm
+        function generateMaze() {
+            // Initialize maze with walls
+            maze = Array(config.mazeSize).fill().map(() => 
+                Array(config.mazeSize).fill().map(() => ({
+                    isWall: true,
+                    visited: false
+                }))
+            );
+
+            function carve(x, y) {
+                maze[y][x].visited = true;
+                maze[y][x].isWall = false;
+
+                const directions = [
+                    [0, -2], [2, 0], [0, 2], [-2, 0]
+                ].sort(() => Math.random() - 0.5);
+
+                for (const [dx, dy] of directions) {
+                    const newX = x + dx;
+                    const newY = y + dy;
+
+                    if (newX >= 0 && newX < config.mazeSize && 
+                        newY >= 0 && newY < config.mazeSize && 
+                        !maze[newY][newX].visited) {
+                        maze[y + dy/2][x + dx/2].isWall = false;
+                        carve(newX, newY);
+                    }
+                }
+            }
+
+            carve(0, 0);
+            
+            // Ensure start and end points are paths and create a path to the heart
+            maze[config.playerStartPos.y][config.playerStartPos.x].isWall = false;
+            maze[config.heartPos.y][config.heartPos.x].isWall = false;
+            
+            // Ensure there's a path to the heart
+            ensurePathToHeart();
+        }
+
+        // Ensure there's a valid path to the heart
+        function ensurePathToHeart() {
+            const visited = Array(config.mazeSize).fill().map(() => 
+                Array(config.mazeSize).fill(false)
+            );
+
+            function dfs(x, y) {
+                if (x < 0 || x >= config.mazeSize || y < 0 || y >= config.mazeSize ||
+                    visited[y][x] || maze[y][x].isWall) {
+                    return false;
+                }
+
+                if (x === config.heartPos.x && y === config.heartPos.y) {
+                    return true;
+                }
+
+                visited[y][x] = true;
+
+                const directions = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+                for (const [dx, dy] of directions) {
+                    if (dfs(x + dx, y + dy)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            if (!dfs(config.playerStartPos.x, config.playerStartPos.y)) {
+                // If no path exists, create one
+                let x = config.playerStartPos.x;
+                let y = config.playerStartPos.y;
+                
+                while (x !== config.heartPos.x || y !== config.heartPos.y) {
+                    if (x < config.heartPos.x) {
+                        maze[y][x + 1].isWall = false;
+                        x++;
+                    } else if (x > config.heartPos.x) {
+                        maze[y][x - 1].isWall = false;
+                        x--;
+                    }
+                    if (y < config.heartPos.y) {
+                        maze[y + 1][x].isWall = false;
+                        y++;
+                    } else if (y > config.heartPos.y) {
+                        maze[y - 1][x].isWall = false;
+                        y--;
+                    }
+                }
+            }
+        }
+
+        // Create fireworks effect
+        function createFirework(x, y) {
+            const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'];
+            const firework = document.createElement('div');
+            firework.className = 'firework';
+            firework.style.left = x + 'px';
+            firework.style.top = y + 'px';
+            firework.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+            document.body.appendChild(firework);
+            
+            setTimeout(() => {
+                firework.remove();
+            }, 1000);
+        }
+
+        // Create multiple fireworks
+        function createFireworks() {
+            for (let i = 0; i < 20; i++) {
+                setTimeout(() => {
+                    const x = Math.random() * window.innerWidth;
+                    const y = Math.random() * window.innerHeight;
+                    createFirework(x, y);
+                }, i * 100);
+            }
+        }
+
+        function renderMaze() {
+            const mazeElement = document.getElementById('maze');
+            mazeElement.style.gridTemplate = `repeat(${config.mazeSize}, 1fr) / repeat(${config.mazeSize}, 1fr)`;
+            mazeElement.innerHTML = '';
+
+            for (let y = 0; y < config.mazeSize; y++) {
+                for (let x = 0; x < config.mazeSize; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = `cell ${maze[y][x].isWall ? 'wall' : 'path'}`;
+
+                    if (x === playerPos.x && y === playerPos.y) {
+                        const player = document.createElement('div');
+                        player.id = 'player';
+                        cell.appendChild(player);
+                    }
+
+                    if (x === config.heartPos.x && y === config.heartPos.y) {
+                        const heart = document.createElement('div');
+                        heart.className = 'heart';
+                        cell.appendChild(heart);
+                    }
+
+                    mazeElement.appendChild(cell);
+                }
+            }
+        }
+
+        function movePlayer(direction) {
+            if (!gameActive) return;
+
+            const newPos = { ...playerPos };
+
+            switch (direction) {
+                case 'up': newPos.y--; break;
+                case 'down': newPos.y++; break;
+                case 'left': newPos.x--; break;
+                case 'right': newPos.x++; break;
+            }
+
+            if (newPos.x >= 0 && newPos.x < config.mazeSize &&
+                newPos.y >= 0 && newPos.y < config.mazeSize &&
+                !maze[newPos.y][newPos.x].isWall) {
+                playerPos = newPos;
+                renderMaze();
+
+                if (newPos.x === config.heartPos.x && newPos.y === config.heartPos.y) {
+                    bgMusic.pause();
+                    winSound.play();
+                    createFireworks();
+                    showMessage(config.messages.win);
+                    gameActive = false;
+                }
+            }
+        }
+
+        function showMessage(message) {
+            const overlay = document.getElementById('message-overlay');
+            const messageText = document.getElementById('message-text');
+            messageText.textContent = message;
+            overlay.style.display = 'flex';
+        }
+
+        function resetGame() {
+            playerPos = { ...config.playerStartPos };
+            gameActive = true;
+            document.getElementById('message-overlay').style.display = 'none';
+            bgMusic.currentTime = 0;
+            bgMusic.play();
+            initGame();
+        }
+
+        function setupEventListeners() {
+            document.addEventListener('keydown', (e) => {
+                const keyToDirection = {
+                    'ArrowUp': 'up',
+                    'ArrowDown': 'down',
+                    'ArrowLeft': 'left',
+                    'ArrowRight': 'right'
+                };
+                
+                if (keyToDirection[e.key]) {
+                    e.preventDefault();
+                    movePlayer(keyToDirection[e.key]);
+                }
+            });
+
+            document.querySelectorAll('.control-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    movePlayer(btn.dataset.direction);
+                });
+            });
+
+            let touchStartX, touchStartY;
+            
+            document.addEventListener('touchstart', (e) => {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            });
+
+            document.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+            });
+
+            document.addEventListener('touchend', (e) => {
+                const touchEndX = e.changedTouches[0].clientX;
+                const touchEndY = e.changedTouches[0].clientY;
+                
+                const dx = touchEndX - touchStartX;
+                const dy = touchEndY - touchStartY;
+                
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    movePlayer(dx > 0 ? 'right' : 'left');
+                } else {
+                    movePlayer(dy > 0 ? 'down' : 'up');
+                }
+            });
+        }
+
+        initGame();
+    </script>
+</body>
+</html>
